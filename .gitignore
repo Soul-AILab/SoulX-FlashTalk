@@ -1,0 +1,7 @@
+.DS_store
+.vscode
+__pycache__/
+logs/
+assets/
+sample_results/
+models/
