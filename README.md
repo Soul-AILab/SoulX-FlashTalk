@@ -25,7 +25,7 @@
 
 
 ## 🤫 Coming soon
-**A 4-GPU version of SoulX-FlashTalk and a new open-source real-time streaming digital human model designed specifically for consumer-grade GPUs.**
+**A 4-GPU version of SoulX-FlashTalk and a new open-source real-time streaming digital human model designed specifically for consumer-grade GPUs like 4090 etc.**
 
 ## 📑 Todo List
 - [x] Technical report 
