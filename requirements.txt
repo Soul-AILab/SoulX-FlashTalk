@@ -16,3 +16,5 @@ pyloudnorm
 decord
 xformers==0.0.31
 librosa
+optimum
+optimum[quanto]
