@@ -103,10 +103,6 @@ def generate(args):
     pipeline = get_pipeline(world_size=world_size, ckpt_dir=args.ckpt_dir, wav2vec_dir=args.wav2vec_dir)
     get_base_data(pipeline, input_prompt=args.input_prompt, cond_image=args.cond_image, base_seed=args.base_seed)
 
-    # TODO: text_encoder and clip can be moved to CPU after data preparation to save memory
-    # BUGFIX: avoid artifacts when using 8 GPUs parallel inference
-    get_base_data(pipeline, input_prompt=args.input_prompt, cond_image=args.cond_image, base_seed=args.base_seed)
-
     generated_list = []
     human_speech_array_all, _ = librosa.load(args.audio_path, sr=infer_params['sample_rate'], mono=True)
 
