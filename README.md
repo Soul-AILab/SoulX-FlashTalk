@@ -125,6 +125,8 @@ Coming Soon!
 If you are interested in leaving a message to our work, feel free to email le.shen@mail.dhu.edu.cn or qiaoqian@soulapp.cn or yutan@soulapp.cn or zhouke@soulapp.cn or liusiyuan@soulapp.cn
 
 You’re welcome to join our WeChat group for technical discussions, updates.
+
+Due to Group 1 reaching its capacity, we have opened a new WeChat group for further technical discussions and updates. Feel free to join us!
 <p align="center">
   <!-- <em>Due to group limits, if you can't scan the QR code, please add my WeChat for group access  -->
       <!-- : <strong>Tiamo James</strong></em> -->
