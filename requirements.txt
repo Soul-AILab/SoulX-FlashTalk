@@ -1,7 +1,7 @@
 opencv-python>=4.12.0.88
 opencv-python-headless>=4.12.0.88
 diffusers>=0.34.0
-transformers>=4.46.3
+transformers==4.46.3
 tokenizers>=0.20.3
 accelerate>=1.8.1
 tqdm

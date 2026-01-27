@@ -78,7 +78,7 @@ def _parse_args():
     return args
 
 def save_video(frames_list, video_path, audio_path, fps):
-    temp_video_path = video_path.replace('res_', '')
+    temp_video_path = video_path.replace('.mp4', '') + '-temp.mp4'
     with imageio.get_writer(temp_video_path, format='mp4', mode='I',
                             fps=fps , codec='h264', ffmpeg_params=['-bf', '0']) as writer:
         for frames in frames_list:
