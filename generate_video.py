@@ -78,7 +78,7 @@ def _parse_args():
     return args
 
 def save_video(frames_list, video_path, audio_path, fps):
-    temp_video_path = video_path.replace('res_', '')
+    temp_video_path = video_path.replace('.mp4', '_temp.mp4')
     with imageio.get_writer(temp_video_path, format='mp4', mode='I',
                             fps=fps , codec='h264', ffmpeg_params=['-bf', '0']) as writer:
         for frames in frames_list:
@@ -88,7 +88,7 @@ def save_video(frames_list, video_path, audio_path, fps):
                 writer.append_data(frame)
     
     # merge video and audio
-    cmd = ['ffmpeg', '-i', temp_video_path, '-i', audio_path, '-c', 'copy', '-shortest', video_path, '-y']
+    cmd = ['ffmpeg', '-i', temp_video_path, '-i', audio_path, '-c:v', 'copy', '-c:a', 'aac', '-shortest', video_path, '-y']
     subprocess.run(cmd)
     os.remove(temp_video_path)
 
@@ -104,11 +104,25 @@ def generate(args):
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     rank = int(os.environ.get("RANK", 0))
 
+    total_start_time = time.time()
+    
+    if rank == 0:
+        logger.info("Data preparation start...")
+    
+    load_start = time.time()
     pipeline = get_pipeline(world_size=world_size, ckpt_dir=args.ckpt_dir, wav2vec_dir=args.wav2vec_dir, cpu_offload=args.cpu_offload)
+    load_end = time.time()
+    if rank == 0:
+        logger.info(f"Model loading done, cost time: {(load_end - load_start):.2f}s")
+
     get_base_data(pipeline, input_prompt=args.input_prompt, cond_image=args.cond_image, base_seed=args.base_seed)
 
     generated_list = []
+    audio_load_start = time.time()
     human_speech_array_all, _ = librosa.load(args.audio_path, sr=infer_params['sample_rate'], mono=True)
+    audio_load_end = time.time()
+    if rank == 0:
+        logger.info(f"Audio loading done, cost time: {(audio_load_end - audio_load_start):.2f}s")
 
 
     if rank == 0:
@@ -116,8 +130,15 @@ def generate(args):
 
     if args.audio_encode_mode == 'once':
         # encode audio together
+        audio_emb_start = time.time()
         audio_embedding_all = get_audio_embedding(pipeline, human_speech_array_all)
+        audio_emb_end = time.time()
+        if rank == 0:
+            logger.info(f"Audio embedding done, cost time: {(audio_emb_end - audio_emb_start):.2f}s")
+            
         audio_embedding_chunks_list = [audio_embedding_all[:, i * slice_len: i * slice_len + frame_num].contiguous() for i in range((audio_embedding_all.shape[1]-frame_num) // slice_len)]
+        
+        generation_start = time.time()
         for chunk_idx, audio_embedding_chunk in enumerate(audio_embedding_chunks_list):
             torch.cuda.synchronize()
             start_time = time.time()
@@ -131,6 +152,9 @@ def generate(args):
                 logger.info(f"Generate video chunk-{chunk_idx} done, cost time: {(end_time - start_time):.2f}s")
 
             generated_list.append(video.cpu())
+        generation_end = time.time()
+        if rank == 0:
+            logger.info(f"Total inference done, cost time: {(generation_end - generation_start):.2f}s")
 
     elif args.audio_encode_mode == 'stream':
         cached_audio_length_sum = sample_rate * cached_audio_duration
@@ -142,6 +166,7 @@ def generate(args):
         human_speech_array_slice_len = slice_len * sample_rate // tgt_fps
         human_speech_array_slices = human_speech_array_all[:(len(human_speech_array_all)//(human_speech_array_slice_len))*human_speech_array_slice_len].reshape(-1, human_speech_array_slice_len)
 
+        generation_start = time.time()
         for chunk_idx, human_speech_array in enumerate(human_speech_array_slices):
             # streaming encode audio chunks
             audio_dq.extend(human_speech_array.tolist())
@@ -160,6 +185,9 @@ def generate(args):
                 logger.info(f"Generate video chunk-{chunk_idx} done, cost time: {(end_time - start_time):.2f}s")
 
             generated_list.append(video.cpu())
+        generation_end = time.time()
+        if rank == 0:
+            logger.info(f"Total inference done, cost time: {(generation_end - generation_start):.2f}s")
 
 
     if rank == 0:
@@ -167,14 +195,18 @@ def generate(args):
             output_dir = 'sample_results'
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
-            timestamp = datetime.now().strftime("%Y%m%d-%H:%M:%S-%f")[:-3]
-            filename = f"res_{timestamp}.mp4"
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+            filename = f"{timestamp}.mp4"
             filepath = os.path.join(output_dir, filename)
             args.save_file = filepath
 
+        save_start = time.time()
         save_video(generated_list, args.save_file, args.audio_path, fps=tgt_fps)
-        logger.info(f"Saving generated video to {args.save_file}.mp4")  
-        logger.info("Finished.")
+        save_end = time.time()
+        logger.info(f"Saving generated video to {args.save_file}, cost time: {(save_end - save_start):.2f}s")  
+        
+        total_end_time = time.time()
+        logger.info(f"Finished. Total cost time: {(total_end_time - total_start_time):.2f}s")
 
     if world_size > 1:
         dist.barrier()
