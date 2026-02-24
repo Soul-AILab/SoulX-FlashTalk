@@ -110,7 +110,7 @@ def flash_attention(
         # compatibility with different versions of API for flash_attn_3
         try:
             x = x.unflatten(0, (b, lq))
-        except:
+        except (RuntimeError, TypeError):
             x = x[0].unflatten(0, (b, lq))
     else:
         assert FLASH_ATTN_2_AVAILABLE
