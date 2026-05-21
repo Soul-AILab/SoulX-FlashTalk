@@ -13,12 +13,14 @@ from loguru import logger
 from collections import deque
 from datetime import datetime
 
-from flash_talk.inference import get_pipeline, get_base_data, get_audio_embedding, run_pipeline, infer_params
+from flash_talk.inference import get_pipeline, get_base_data, get_audio_embedding, run_pipeline, infer_params, extract_video_frame, update_cond_image
 
 def _validate_args(args):
     # Basic check
     assert args.ckpt_dir is not None, "Please specify FlashTalk model checkpoint directory."
     assert args.wav2vec_dir is not None, "Please specify the wav2vec checkpoint directory."
+    if args.cond_video is not None:
+        assert os.path.exists(args.cond_video), f"Condition video not found: {args.cond_video}"
 
     args.base_seed = args.base_seed if args.base_seed >= 0 else 9999
 
@@ -57,6 +59,13 @@ def _parse_args():
         default="examples/man.png",
         help="[meta file] The condition image path to generate the video.")
     parser.add_argument(
+        "--cond_video",
+        type=str,
+        default=None,
+        help="[optional] A source video path. When provided, each generation chunk "
+             "re-anchors appearance to the corresponding frame from this video. "
+             "Overrides --cond_image (frame 0 is used as initial conditioning).")
+    parser.add_argument(
         "--audio_path",
         type=str,
         default="examples/cantonese_16k.wav",
@@ -80,9 +89,10 @@ def _parse_args():
 def save_video(frames_list, video_path, audio_path, fps):
     temp_video_path = video_path.replace('res_', '')
     with imageio.get_writer(temp_video_path, format='mp4', mode='I',
-                            fps=fps , codec='h264', ffmpeg_params=['-bf', '0']) as writer:
+                            fps=fps, codec='libx264',
+                            ffmpeg_params=['-crf', '18', '-preset', 'slow', '-pix_fmt', 'yuv420p']) as writer:
         for frames in frames_list:
-            frames = frames.numpy().astype(np.uint8)
+            frames = np.round(frames.numpy()).clip(0, 255).astype(np.uint8)
             for i in range(frames.shape[0]):
                 frame = frames[i, :, :, :]
                 writer.append_data(frame)
@@ -106,7 +116,15 @@ def generate(args):
     rank = int(os.environ.get("RANK", 0))
 
     pipeline = get_pipeline(world_size=world_size, ckpt_dir=args.ckpt_dir, wav2vec_dir=args.wav2vec_dir, cpu_offload=args.cpu_offload)
-    get_base_data(pipeline, input_prompt=args.input_prompt, cond_image=args.cond_image, base_seed=args.base_seed)
+
+    # When a source video is provided, extract frame 0 as initial conditioning image
+    initial_cond_image = args.cond_image
+    if args.cond_video is not None:
+        initial_cond_image = extract_video_frame(args.cond_video, 0)
+        if rank == 0:
+            logger.info(f"Using video input: {args.cond_video} (frame 0 as initial conditioning)")
+
+    get_base_data(pipeline, input_prompt=args.input_prompt, cond_image=initial_cond_image, base_seed=args.base_seed)
 
     generated_list = []
     human_speech_array_all, _ = librosa.load(args.audio_path, sr=infer_params['sample_rate'], mono=True)
@@ -147,6 +165,11 @@ def generate(args):
 
             generated_list.append(video.cpu())
 
+            # Update conditioning image from source video for next chunk
+            if args.cond_video is not None:
+                next_frame_idx = (chunk_idx + 1) * slice_len
+                update_cond_image(pipeline, args.cond_video, next_frame_idx)
+
     elif args.audio_encode_mode == 'stream':
         cached_audio_length_sum = sample_rate * cached_audio_duration
         audio_end_idx = cached_audio_duration * tgt_fps
@@ -182,6 +205,11 @@ def generate(args):
                 logger.info(f"Generate video chunk-{chunk_idx} done, cost time: {(end_time - start_time):.2f}s")
 
             generated_list.append(video.cpu())
+
+            # Update conditioning image from source video for next chunk
+            if args.cond_video is not None:
+                next_frame_idx = (chunk_idx + 1) * slice_len
+                update_cond_image(pipeline, args.cond_video, next_frame_idx)
 
 
     if rank == 0:

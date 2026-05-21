@@ -248,6 +248,76 @@ class FlashTalkPipeline:
         return
 
     @torch.no_grad()
+    def update_cond_image(self, cond_image):
+        """Update the conditioning image for the next generation chunk.
+
+        Re-encodes the given image with CLIP and VAE, then updates
+        self.arg_c['clip_fea'] and self.arg_c['y']. This enables
+        per-chunk appearance anchoring when generating from a source video.
+
+        The color correction reference (self.original_color_reference) is
+        NOT updated -- it remains the first frame throughout.
+
+        Args:
+            cond_image: PIL.Image in RGB mode, or a file path string.
+        """
+        if isinstance(cond_image, str):
+            cond_image = Image.open(cond_image).convert("RGB")
+
+        cond_image_tensor = resize_and_centercrop(
+            cond_image, (self.target_h, self.target_w)
+        ).to(dtype=self.param_dtype, device=self.device)
+        cond_image_tensor = (cond_image_tensor / 255 - 0.5) * 2
+
+        self.cond_image_tensor = cond_image_tensor
+
+        # Re-encode with CLIP
+        if self.cpu_offload:
+            self.clip.model.to(self.device)
+        clip_context = self.clip.visual(
+            cond_image_tensor[:, :, -1:, :, :]
+        ).to(self.param_dtype)
+        if self.cpu_offload:
+            self.clip.model.cpu()
+            torch.cuda.empty_cache()
+
+        # Re-encode with VAE (zero-padded to frame_num + mask)
+        video_frames = torch.zeros(
+            1, cond_image_tensor.shape[1],
+            self.frame_num - cond_image_tensor.shape[2],
+            self.target_h, self.target_w
+        ).to(dtype=self.param_dtype, device=self.device)
+        padding_frames_pixels_values = torch.concat(
+            [cond_image_tensor, video_frames], dim=2
+        )
+
+        if self.cpu_offload:
+            self.vae.model.to(self.device)
+        y = self.vae.encode(padding_frames_pixels_values)
+        common_y = y.unsqueeze(0).to(self.param_dtype)
+
+        # Rebuild mask
+        msk = torch.ones(
+            1, self.frame_num, self.lat_h, self.lat_w, device=self.device
+        )
+        msk[:, 1:] = 0
+        msk = torch.concat([
+            torch.repeat_interleave(msk[:, 0:1], repeats=4, dim=1), msk[:, 1:]
+        ], dim=1)
+        msk = msk.view(1, msk.shape[1] // 4, 4, self.lat_h, self.lat_w)
+        msk = msk.transpose(1, 2).to(self.param_dtype)
+
+        y = torch.concat([msk, common_y], dim=1)
+
+        if self.cpu_offload:
+            self.vae.model.cpu()
+            torch.cuda.empty_cache()
+
+        # Update arg_c with fresh CLIP and VAE features
+        self.arg_c['clip_fea'] = clip_context
+        self.arg_c['y'] = y
+
+    @torch.no_grad()
     def preprocess_audio(self, speech_array, sr=16000, fps=25):
         video_length = len(speech_array) * fps / sr
 

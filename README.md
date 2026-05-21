@@ -19,6 +19,38 @@
 
 
 ## 🔥 News
+
+I have added the code to support video2video lip sync. Now with this code user can pass input video and audio and do the lip sync.
+
+Changes are in -
+        modified:   flash_talk/configs/infer_params.yaml
+        modified:   flash_talk/inference.py
+        modified:   flash_talk/infinite_talk/utils/multitalk_utils.py
+        modified:   flash_talk/src/pipeline/flash_talk_pipeline.py
+        modified:   generate_video.py
+
+How to use the video2video inference
+
+CUDA_VISIBLE_DEVICES=0
+
+CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES python generate_video.py \
+    --ckpt_dir models/SoulX-FlashTalk-14B \
+    --wav2vec_dir models/chinese-wav2vec2-base \
+    --input_prompt "A person is talking. Only the foreground characters are moving, the background remains static." \
+    --cond_video examples/video.mp4 \
+    --audio_path examples/cantonese_16k.wav \
+    --audio_encode_mode stream
+
+just pass --cond_video examples/video.mp4 arg instead of --cond_image
+
+Both --cond_image, --cond_video would work with this code.
+
+flash_talk/configs/infer_params.yaml has different settings to generate HD/higher quality output which can be discarded, and default settings can be used to speed up the inference.
+
+Thanks
+
+
+
 - **2026.02.12** - We have released the [SoulX-FlashHead](https://github.com/Soul-AILab/SoulX-FlashHead), which is a streaming talking head project that achieves real-time performance on consumer GPUs (e.g., RTX 4090/5090).
 - **2026.01.08** - We have released the [inference code](https://github.com/Soul-AILab/SoulX-FlashTalk), and the [model weights](https://huggingface.co/Soul-AILab/SoulX-FlashTalk-14B).
 - **2025.12.30** - We released **Project page** on [SoulX-FlashTalk](https://soul-ailab.github.io/soulx-flashtalk/).

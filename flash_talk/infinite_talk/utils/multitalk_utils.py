@@ -662,12 +662,12 @@ def resize_and_centercrop(cond_image, target_size):
     if isinstance(cond_image, torch.Tensor):
         if len(cond_image.shape) == 3:
             cond_image = cond_image[None]
-        resized_tensor = nn.functional.interpolate(cond_image, size=(final_h, final_w), mode='nearest').contiguous() 
+        resized_tensor = nn.functional.interpolate(cond_image, size=(final_h, final_w), mode='bicubic', align_corners=False).contiguous()
         # crop
         cropped_tensor = transforms.functional.center_crop(resized_tensor, target_size) 
         cropped_tensor = cropped_tensor.squeeze(0)
     else:
-        resized_image = cond_image.resize((final_w, final_h), resample=Image.BILINEAR)
+        resized_image = cond_image.resize((final_w, final_h), resample=Image.LANCZOS)
         resized_image = np.array(resized_image)
         # tensor and crop
         resized_tensor = torch.from_numpy(resized_image)[None, ...].permute(0, 3, 1, 2).contiguous()

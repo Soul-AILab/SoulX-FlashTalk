@@ -1,7 +1,11 @@
 # Copyright 2024-2025 The Alibaba Wan Team Authors. All rights reserved.
+import gc
+import os
 import yaml
 import torch
+from PIL import Image
 from loguru import logger
+from decord import VideoReader, cpu as decord_cpu
 
 from flash_talk.src.pipeline.flash_talk_pipeline import FlashTalkPipeline
 from flash_talk.src.distributed.usp_device import get_device, get_parallel_degree
@@ -67,4 +71,49 @@ def run_pipeline(pipeline, audio_embedding):
     sample = pipeline.generate(audio_embedding)
     sample_frames = (((sample+1)/2).permute(1,2,3,0).clip(0,1) * 255).contiguous()
     return sample_frames
+
+
+_VIDEO_EXTS = ('.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm', '.mpeg', '.mpg')
+
+def extract_video_frame(video_path, frame_id):
+    """Extract a specific frame from a video file as a PIL Image.
+
+    If frame_id exceeds the video length, returns the last frame.
+    If the path points to an image file (not video), opens it directly.
+
+    Args:
+        video_path: Path to the video file.
+        frame_id: 0-based frame index to extract.
+
+    Returns:
+        PIL.Image in RGB mode.
+    """
+    ext = os.path.splitext(video_path)[1].lower()
+    if ext in _VIDEO_EXTS:
+        vr = VideoReader(video_path, ctx=decord_cpu(0))
+        if frame_id < len(vr):
+            frame = vr[frame_id].asnumpy()
+        else:
+            frame = vr[-1].asnumpy()
+        del vr
+        gc.collect()
+        frame = Image.fromarray(frame)
+    else:
+        frame = Image.open(video_path).convert("RGB")
+    return frame
+
+
+def update_cond_image(pipeline, video_path, frame_idx):
+    """Update the pipeline's conditioning image from a video frame.
+
+    Extracts the frame at frame_idx from video_path, then re-encodes it
+    with CLIP and VAE to update arg_c['clip_fea'] and arg_c['y'].
+
+    Args:
+        pipeline: FlashTalkPipeline instance.
+        video_path: Path to the source video.
+        frame_idx: Frame index to extract (0-based).
+    """
+    frame_image = extract_video_frame(video_path, frame_idx)
+    pipeline.update_cond_image(frame_image)
 
