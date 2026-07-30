@@ -49,16 +49,14 @@ def split_token_counts_and_frame_ids(T, token_frame, world_size, rank):
     S = T * token_frame
 
     # compute split sizes per rank
-    base = S // world_size
-    rem = S % world_size
+    base = (S + world_size - 1) // world_size
     split_sizes = torch.full((world_size,), base, dtype=torch.long)
-    split_sizes[:rem] += 1
 
     start = split_sizes[:rank].sum()
     end = start + split_sizes[rank]
 
     # vectorized mapping: global index -> frame id
-    idx = torch.arange(start, end, dtype=torch.long)
+    idx = torch.arange(start, end, dtype=torch.long).clamp_max_(S - 1)
     frame_ids = idx // token_frame
 
     # unique counts
