@@ -14,6 +14,18 @@ try:
 except ModuleNotFoundError:
     FLASH_ATTN_2_AVAILABLE = False
 
+try:
+    import xformers.flash_attn_3._C
+    XFORMERS_ATTN_3_AVAILABLE = True
+except ModuleNotFoundError:
+    XFORMERS_ATTN_3_AVAILABLE = False
+
+try:
+    import sageattention
+    SAGE_ATTN_AVAILABLE = True
+except ModuleNotFoundError:
+    SAGE_ATTN_AVAILABLE = False
+
 __all__ = [
     'flash_attention',
     'attention',
@@ -108,6 +120,45 @@ def flash_attention(
             deterministic=deterministic)
         
         # compatibility with different versions of API for flash_attn_3
+        try:
+            x = x.unflatten(0, (b, lq))
+        except:
+            x = x[0].unflatten(0, (b, lq))
+    elif (version is None or version == 3) and XFORMERS_ATTN_3_AVAILABLE:
+        x, _,_,_ = torch.ops.flash_attn_3.fwd(
+                                q,
+                                k,
+                                v,
+                                cu_seqlens_q=torch.cat([q_lens.new_zeros([1]), q_lens]).cumsum(
+                                    0, dtype=torch.int32).to(q.device, non_blocking=True),
+                                cu_seqlens_k=torch.cat([k_lens.new_zeros([1]), k_lens]).cumsum(
+                                    0, dtype=torch.int32).to(q.device, non_blocking=True),
+                                seqused_q=None,
+                                seqused_k=None,
+                                max_seqlen_q=lq,
+                                max_seqlen_k=lk,
+                                softmax_scale=softmax_scale,
+                                is_causal=causal,
+                            )
+        try:
+            x = x.unflatten(0, (b, lq))
+        except:
+            x = x[0].unflatten(0, (b, lq))
+    elif (version is None or version == 2) and SAGE_ATTN_AVAILABLE:
+        from sageattention import sageattn_varlen
+        x = sageattn_varlen(
+            q,
+            k,
+            v,
+            cu_seqlens_q=torch.cat([q_lens.new_zeros([1]), q_lens]).cumsum(
+                                    0, dtype=torch.int32).to(q.device, non_blocking=True),
+            cu_seqlens_k=torch.cat([k_lens.new_zeros([1]), k_lens]).cumsum(
+                0, dtype=torch.int32).to(q.device, non_blocking=True),
+            max_seqlen_q=lq,
+            max_seqlen_k=lk,
+            is_causal=causal,
+            softmax_scale=softmax_scale,
+        )
         try:
             x = x.unflatten(0, (b, lq))
         except:
