@@ -187,4 +187,4 @@ If you find our work useful in your research, please consider citing:
 
 ## 💡 Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Soul-AILab/SoulX-FlashTalk&type=date&legend=top-left)](https://www.star-history.com/#Soul-AILab/SoulX-FlashTalk&type=date&legend=top-left)
+[![Star History Chart](https://star-history.dera.page/svg?repos=Soul-AILab/SoulX-FlashTalk&type=date&legend=top-left)](https://star-history.dera.page/#Soul-AILab/SoulX-FlashTalk&type=date&legend=top-left)
